@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.dmg
+*.app
+.venv/
+venv/
+.env
+token.json
+credentials.json

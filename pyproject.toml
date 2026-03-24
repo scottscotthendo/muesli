@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meeting-recorder"
+version = "0.1.0"
+description = "macOS menubar app that records and transcribes meetings"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "rumps>=0.4.0",
+    "sounddevice>=0.4.6",
+    "numpy>=1.24",
+    "scipy>=1.11",
+    "faster-whisper>=1.0.0,<2.0.0",
+    "google-api-python-client>=2.100.0",
+    "google-auth-oauthlib>=1.1.0",
+    "google-auth-httplib2>=0.1.1",
+]
+
+[project.scripts]
+meeting-recorder = "meeting_recorder.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
