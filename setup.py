@@ -39,6 +39,8 @@ OPTIONS = {
         "meeting_recorder.recorder",
         "meeting_recorder.transcriber",
         "meeting_recorder.summarizer",
+        "meeting_recorder.diarizer",
+        "meeting_recorder.error_manager",
         "meeting_recorder.calendar_client",
         "meeting_recorder.transcript_writer",
         "meeting_recorder.config",

@@ -62,3 +62,41 @@ def test_writer_context_manager():
             content = writer.file_path.read_text()
             assert "# Context Test" in content
             assert "[00:00] Works with context manager." in content
+
+
+def test_writer_append_with_speaker():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with patch("meeting_recorder.transcript_writer.MEETINGS_DIR", Path(tmpdir)):
+            with TranscriptWriter(title="Speaker Test") as writer:
+                writer.append_segment(0, "Hello.", speaker="SPEAKER_00")
+                writer.append_segment(30, "Hi there.", speaker="SPEAKER_01")
+
+            content = writer.file_path.read_text()
+            assert "[00:00] **SPEAKER_00:** Hello." in content
+            assert "[00:30] **SPEAKER_01:** Hi there." in content
+
+
+def test_writer_update_with_speakers():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with patch("meeting_recorder.transcript_writer.MEETINGS_DIR", Path(tmpdir)):
+            writer = TranscriptWriter(
+                title="Diarize Test",
+                start_time=datetime(2025, 1, 15, 14, 0),
+            )
+            writer.open()
+            writer.append_segment(0, "First line.")
+            writer.append_segment(30, "Second line.")
+            writer.close()
+
+            # Retroactively add speaker labels
+            labelled = [
+                (0, "SPEAKER_00", "First line."),
+                (30, "SPEAKER_01", "Second line."),
+            ]
+            writer.update_with_speakers(labelled)
+
+            content = writer.file_path.read_text()
+            assert "**SPEAKER_00:** First line." in content
+            assert "**SPEAKER_01:** Second line." in content
+            # Original unlabelled lines should be gone
+            assert "[00:00] First line.\n" not in content

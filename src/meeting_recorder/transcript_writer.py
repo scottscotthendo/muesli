@@ -70,13 +70,16 @@ class TranscriptWriter:
         self._file.write("\n---\n\n")
         self._file.flush()
 
-    def append_segment(self, timestamp_seconds: int, text: str):
-        """Append a timestamped transcript segment."""
+    def append_segment(self, timestamp_seconds: int, text: str, speaker: str | None = None):
+        """Append a timestamped transcript segment, optionally with a speaker label."""
         if self._file is None:
             self.open()
 
         ts = _format_timestamp(timestamp_seconds)
-        self._file.write(f"{ts} {text}\n\n")
+        if speaker:
+            self._file.write(f"{ts} **{speaker}:** {text}\n\n")
+        else:
+            self._file.write(f"{ts} {text}\n\n")
         self._file.flush()
 
     def get_transcript_text(self) -> str:
@@ -106,6 +109,42 @@ class TranscriptWriter:
         new_content = f"{header}\n---\n\n## Summary\n\n{summary}\n\n---\n{body}"
         path.write_text(new_content, encoding="utf-8")
         logger.info("Summary inserted into %s", path)
+
+    def update_with_speakers(self, labelled_segments: list[tuple[int, str, str]]):
+        """Rewrite the transcript body with speaker labels.
+
+        Args:
+            labelled_segments: List of (timestamp_seconds, speaker, text).
+        """
+        path = self.file_path
+        if not path.exists():
+            return
+
+        content = path.read_text(encoding="utf-8")
+        parts = content.split("\n---\n", 1)
+        if len(parts) != 2:
+            return
+
+        header = parts[0]
+        # Check if there's a summary section
+        body_part = parts[1]
+        summary_split = body_part.split("\n---\n", 1)
+
+        lines = []
+        for ts_sec, speaker, text in labelled_segments:
+            ts = _format_timestamp(ts_sec)
+            lines.append(f"{ts} **{speaker}:** {text}\n")
+
+        new_body = "\n" + "\n".join(lines)
+
+        if len(summary_split) == 2:
+            # Preserve summary: header --- summary --- transcript
+            new_content = f"{header}\n---\n{summary_split[0]}\n---\n{new_body}"
+        else:
+            new_content = f"{header}\n---\n{new_body}"
+
+        path.write_text(new_content, encoding="utf-8")
+        logger.info("Transcript updated with speaker labels: %s", path)
 
     def close(self):
         """Close the transcript file."""

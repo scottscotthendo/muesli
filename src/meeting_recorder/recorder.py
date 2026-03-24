@@ -60,6 +60,8 @@ class AudioRecorder:
         self._chunk_index = 0
         self._device_info: dict | None = None
         self._stream: sd.InputStream | None = None
+        # Store resampled chunks for post-recording diarization
+        self._all_chunks_16k: list[np.ndarray] = []
 
     def _find_device(self) -> int:
         """Locate BlackHole and return its device index. Raises if not found."""
@@ -94,6 +96,7 @@ class AudioRecorder:
         self._samples_collected = 0
 
         chunk_16k = _resample_to_16k(raw, SAMPLE_RATE)
+        self._all_chunks_16k.append(chunk_16k)
         timestamp_seconds = self._chunk_index * CHUNK_DURATION_SECONDS
         self.audio_queue.put((timestamp_seconds, chunk_16k))
         self._chunk_index += 1
@@ -129,6 +132,15 @@ class AudioRecorder:
                 self._flush_chunk()
 
         logger.info("Recording stopped.")
+
+    def get_full_audio_16k(self) -> np.ndarray | None:
+        """Return all recorded audio concatenated as 16kHz mono float32.
+
+        Available after recording stops. Used for post-recording diarization.
+        """
+        if not self._all_chunks_16k:
+            return None
+        return np.concatenate(self._all_chunks_16k, axis=0)
 
     def start_thread(self) -> threading.Thread:
         """Launch the recorder in a background thread."""
