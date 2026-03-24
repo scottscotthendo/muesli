@@ -79,6 +79,34 @@ class TranscriptWriter:
         self._file.write(f"{ts} {text}\n\n")
         self._file.flush()
 
+    def get_transcript_text(self) -> str:
+        """Read back the transcript body (everything after the --- separator)."""
+        path = self.file_path
+        if not path.exists():
+            return ""
+        content = path.read_text(encoding="utf-8")
+        # Split on the --- separator and return everything after it
+        parts = content.split("\n---\n", 1)
+        return parts[1].strip() if len(parts) > 1 else ""
+
+    def insert_summary(self, summary: str):
+        """Insert a summary block between the header and the transcript body."""
+        path = self.file_path
+        if not path.exists():
+            return
+
+        content = path.read_text(encoding="utf-8")
+        parts = content.split("\n---\n", 1)
+        if len(parts) != 2:
+            return
+
+        header = parts[0]
+        body = parts[1]
+
+        new_content = f"{header}\n---\n\n## Summary\n\n{summary}\n\n---\n{body}"
+        path.write_text(new_content, encoding="utf-8")
+        logger.info("Summary inserted into %s", path)
+
     def close(self):
         """Close the transcript file."""
         if self._file is not None:

@@ -8,6 +8,7 @@ A macOS menubar app that records system audio and transcribes meetings locally u
 - **Local transcription** — all audio is transcribed on-device using faster-whisper (small.en model)
 - **Rolling 30-second chunks** — transcript updates in near real-time
 - **Google Calendar integration** — detects meetings starting within 10 minutes and prompts you to record
+- **AI-powered summaries** — after recording stops, a local LLM (Qwen2.5-1.5B) generates key decisions, action items, and topics
 - **Markdown output** — clean, timestamped transcripts saved to `~/meetings/`
 
 ## Prerequisites
@@ -104,13 +105,14 @@ open dist/app.app
 ## Usage
 
 1. Launch the app — a microphone icon appears in the menubar
-2. On first run, the faster-whisper model (~460MB) will download automatically
+2. On first run, the faster-whisper model (~460MB) and summarization model (~1GB) will download automatically
 3. If Google credentials are configured, the app checks for upcoming calendar events every 60 seconds
 4. When a meeting is detected: a prompt appears asking if you want to start recording
 5. Click **Start Recording** (or accept the calendar prompt)
 6. The menubar shows elapsed time while recording
 7. Click **Stop Recording** when done
-8. A notification shows the path to the saved transcript
+8. The menubar shows "Summarizing..." while the LLM generates a summary
+9. A notification shows the path to the saved transcript
 
 ## Transcript Format
 
@@ -125,6 +127,14 @@ Transcripts are saved to `~/meetings/` as markdown files:
 
 Date: 2025-01-15 14:00
 Attendees: alice@company.com, bob@company.com
+
+---
+
+## Summary
+
+- **Key decisions**: Agreed to ship auth module by Friday
+- **Action items**: Alice to finish OAuth integration, Bob to write tests
+- **Topics**: Sprint progress, auth module status, deployment timeline
 
 ---
 

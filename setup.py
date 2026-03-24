@@ -9,8 +9,8 @@ OPTIONS = {
     "emulate_shell_environment": True,
     "plist": {
         "LSUIElement": True,  # No dock icon
-        "CFBundleName": "Meeting Recorder",
-        "CFBundleDisplayName": "Meeting Recorder",
+        "CFBundleName": "Hendos Meeting Recorder",
+        "CFBundleDisplayName": "Hendos Meeting Recorder",
         "CFBundleIdentifier": "com.personal.meeting-recorder",
         "CFBundleVersion": "0.1.0",
         "CFBundleShortVersionString": "0.1.0",
@@ -30,12 +30,15 @@ OPTIONS = {
         "google.oauth2",
         "google_auth_oauthlib",
         "googleapiclient",
+        "llama_cpp",
+        "huggingface_hub",
         "meeting_recorder",
     ],
     "includes": [
         "meeting_recorder.app",
         "meeting_recorder.recorder",
         "meeting_recorder.transcriber",
+        "meeting_recorder.summarizer",
         "meeting_recorder.calendar_client",
         "meeting_recorder.transcript_writer",
         "meeting_recorder.config",
