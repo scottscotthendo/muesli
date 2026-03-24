@@ -115,7 +115,15 @@ cp -R dist/app.app "/Applications/Meeting Recorder.app"
 echo "    Installed: /Applications/Meeting Recorder.app"
 
 # -------------------------------------------------------------------
-# 7. Manual steps
+# 7. Add to Login Items (auto-launch on boot)
+# -------------------------------------------------------------------
+step "Adding to Login Items (auto-launch on boot)..."
+osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/Meeting Recorder.app", hidden:true}' 2>/dev/null && \
+    echo "    Meeting Recorder will launch automatically on login." || \
+    warn "Could not add to Login Items — you can do this manually in System Settings → General → Login Items."
+
+# -------------------------------------------------------------------
+# 8. Manual steps
 # -------------------------------------------------------------------
 step "Almost done! A couple of manual steps:"
 
@@ -131,10 +139,6 @@ echo "     - Create OAuth credentials at https://console.cloud.google.com"
 echo "     - Enable the Google Calendar API"
 echo "     - Download credentials.json to ~/.config/meeting-recorder/"
 echo "     - The app will prompt you to authorize on first calendar check"
-echo ""
-echo -e "  ${BOLD}3. Launch on startup (optional):${RESET}"
-echo "     - System Settings → General → Login Items"
-echo "     - Add 'Meeting Recorder'"
 echo ""
 
 step "Done! Launch with:"
