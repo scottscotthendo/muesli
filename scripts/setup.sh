@@ -103,22 +103,22 @@ print('    Summarization model ready.')
 # -------------------------------------------------------------------
 # 6. Build .app and install
 # -------------------------------------------------------------------
-step "Building Meeting Recorder.app..."
+step "Building Hendos Meeting Recorder.app..."
 ./scripts/build_app.sh
 
 step "Installing to /Applications..."
-if [ -d "/Applications/Meeting Recorder.app" ]; then
+if [ -d "/Applications/Hendos Meeting Recorder.app" ]; then
     echo "    Removing previous version..."
-    rm -rf "/Applications/Meeting Recorder.app"
+    rm -rf "/Applications/Hendos Meeting Recorder.app"
 fi
-cp -R dist/app.app "/Applications/Meeting Recorder.app"
-echo "    Installed: /Applications/Meeting Recorder.app"
+cp -R dist/app.app "/Applications/Hendos Meeting Recorder.app"
+echo "    Installed: /Applications/Hendos Meeting Recorder.app"
 
 # -------------------------------------------------------------------
 # 7. Add to Login Items (auto-launch on boot)
 # -------------------------------------------------------------------
 step "Adding to Login Items (auto-launch on boot)..."
-osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/Meeting Recorder.app", hidden:true}' 2>/dev/null && \
+osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/Hendos Meeting Recorder.app", hidden:true}' 2>/dev/null && \
     echo "    Meeting Recorder will launch automatically on login." || \
     warn "Could not add to Login Items — you can do this manually in System Settings → General → Login Items."
 
@@ -142,5 +142,5 @@ echo "     - The app will prompt you to authorize on first calendar check"
 echo ""
 
 step "Done! Launch with:"
-echo "    open '/Applications/Meeting Recorder.app'"
+echo "    open '/Applications/Hendos Meeting Recorder.app'"
 echo ""

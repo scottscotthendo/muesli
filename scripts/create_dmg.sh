@@ -10,7 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP_NAME="Meeting Recorder"
+APP_NAME="Hendos Meeting Recorder"
 DMG_NAME="MeetingRecorder-0.1.0.dmg"
 APP_PATH="dist/app.app"
 
