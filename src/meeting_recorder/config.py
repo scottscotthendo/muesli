@@ -28,7 +28,11 @@ WHISPER_COMPUTE_TYPE = "int8"
 CALENDAR_LOOKAHEAD_MINUTES = 10
 CALENDAR_CHECK_INTERVAL_SECONDS = 60
 
+# Diarization
+DIARIZATION_ENABLED = True  # Set to False to skip speaker identification
+
 # UI
 APP_NAME = "Hendos Meeting Recorder"
 ICON_IDLE = "🎙"
 ICON_RECORDING = "🔴"
+ICON_ERROR = "⚠️"

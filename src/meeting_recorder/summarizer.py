@@ -91,6 +91,13 @@ class Summarizer:
     def is_ready(self) -> bool:
         return self._model_ready.is_set() and self._loading_error is None
 
+    def unload_model(self):
+        """Release the summarization model to free memory."""
+        self._model = None
+        self._model_ready.clear()
+        self._loading_error = None
+        logger.info("Summarization model unloaded.")
+
     def summarize(self, transcript_text: str) -> str | None:
         """Generate a summary of the transcript. Returns markdown string or None on failure."""
         if not self._model_ready.wait(timeout=120):

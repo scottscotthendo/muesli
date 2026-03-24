@@ -125,6 +125,13 @@ class Transcriber:
 
         logger.info("Transcriber stopped.")
 
+    def unload_model(self):
+        """Release the whisper model to free memory."""
+        self._model = None
+        self._model_ready.clear()
+        self._loading_error = None
+        logger.info("Whisper model unloaded.")
+
     def start_thread(self) -> threading.Thread:
         """Launch the transcriber in a background thread."""
         t = threading.Thread(target=self.run, name="Transcriber", daemon=True)
