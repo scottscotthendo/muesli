@@ -1,5 +1,6 @@
 """Menubar application — the main entry point."""
 
+import gc
 import logging
 import queue
 import threading
@@ -40,6 +41,11 @@ ERR_RECORDING = "Recording"
 ERR_SUMMARIZATION = "Summarization"
 ERR_DIARIZATION = "Diarization"
 ERR_CALENDAR = "Calendar"
+
+
+def _free_memory():
+    """Force garbage collection to reclaim memory from unloaded models."""
+    gc.collect()
 
 
 class MeetingRecorderApp(rumps.App):
@@ -85,19 +91,9 @@ class MeetingRecorderApp(rumps.App):
         self._last_prompted_event: str | None = None
         self._calendar_authenticated = False
 
-        # Pre-load whisper model
+        # Pre-load whisper model only — other models loaded on demand
         self._transcriber_preload = Transcriber(queue.Queue(), queue.Queue(), threading.Event())
         self._load_whisper()
-
-        # Pre-load summarization model
-        self._summarizer = Summarizer()
-        self._load_summarizer()
-
-        # Pre-load diarization pipeline
-        self._diarizer: Diarizer | None = None
-        if DIARIZATION_ENABLED:
-            self._diarizer = Diarizer()
-            self._load_diarizer()
 
         # Timers
         self._ui_timer = rumps.Timer(self._on_ui_tick, 1)
@@ -107,7 +103,7 @@ class MeetingRecorderApp(rumps.App):
     # ── Model loading with error handling ──────────────────────────
 
     def _load_whisper(self):
-        """Load whisper model, reporting errors to ErrorManager."""
+        """Load whisper model in background, reporting errors to ErrorManager."""
 
         def _do_load():
             self._transcriber_preload.load_model()
@@ -126,6 +122,7 @@ class MeetingRecorderApp(rumps.App):
         self._transcriber_preload._model = None
         self._transcriber_preload._model_ready.clear()
         self._transcriber_preload._loading_error = None
+        _free_memory()
         self._transcriber_preload.load_model()
         if self._transcriber_preload._loading_error:
             self._errors.report(
@@ -135,60 +132,6 @@ class MeetingRecorderApp(rumps.App):
             )
         else:
             self._errors.clear(ERR_WHISPER)
-
-    def _load_summarizer(self):
-        def _do_load():
-            self._summarizer.load_model()
-            if self._summarizer._loading_error:
-                self._errors.report(
-                    ERR_SUMMARIZER,
-                    str(self._summarizer._loading_error),
-                    retry_callback=self._retry_summarizer,
-                )
-            else:
-                self._errors.clear(ERR_SUMMARIZER)
-
-        threading.Thread(target=_do_load, name="SummarizerLoader", daemon=True).start()
-
-    def _retry_summarizer(self):
-        self._summarizer._model = None
-        self._summarizer._model_ready.clear()
-        self._summarizer._loading_error = None
-        self._summarizer.load_model()
-        if self._summarizer._loading_error:
-            self._errors.report(
-                ERR_SUMMARIZER,
-                str(self._summarizer._loading_error),
-                retry_callback=self._retry_summarizer,
-            )
-        else:
-            self._errors.clear(ERR_SUMMARIZER)
-
-    def _load_diarizer(self):
-        def _do_load():
-            self._diarizer.load_pipeline()
-            if self._diarizer.loading_error:
-                self._errors.report(
-                    ERR_DIARIZER,
-                    str(self._diarizer.loading_error),
-                    retry_callback=self._retry_diarizer,
-                )
-            else:
-                self._errors.clear(ERR_DIARIZER)
-
-        threading.Thread(target=_do_load, name="DiarizerLoader", daemon=True).start()
-
-    def _retry_diarizer(self):
-        self._diarizer = Diarizer()
-        self._diarizer.load_pipeline()
-        if self._diarizer.loading_error:
-            self._errors.report(
-                ERR_DIARIZER,
-                str(self._diarizer.loading_error),
-                retry_callback=self._retry_diarizer,
-            )
-        else:
-            self._errors.clear(ERR_DIARIZER)
 
     # ── Error menu ─────────────────────────────────────────────────
 
@@ -420,57 +363,94 @@ class MeetingRecorderApp(rumps.App):
             self.status_item.title = "Processing..."
             logger.info("Recording stopped. Post-processing: %s", file_path)
 
-            # Run diarization + summarization in background
+            # Run post-processing in background with sequential model lifecycle
             transcript_segments = list(self._transcript_segments)
 
             def _post_process():
-                # 1. Speaker diarization
-                if self._diarizer and self._diarizer.is_ready() and full_audio is not None:
-                    try:
-                        self.status_item.title = "Identifying speakers..."
-                        speaker_segments = self._diarizer.diarize(full_audio, TARGET_SAMPLE_RATE)
-                        if speaker_segments:
-                            labelled = assign_speakers_to_transcript(
-                                transcript_segments,
-                                speaker_segments,
-                                chunk_duration=CHUNK_DURATION_SECONDS,
-                            )
-                            writer.update_with_speakers(labelled)
-                        self._errors.clear(ERR_DIARIZATION)
-                    except Exception as e:
-                        logger.exception("Diarization failed")
-                        self._errors.report(
-                            ERR_DIARIZATION,
-                            str(e),
-                        )
-
-                # 2. Summarization
-                try:
-                    self.status_item.title = "Summarizing..."
-                    transcript = writer.get_transcript_text()
-                    if transcript.strip():
-                        summary = self._summarizer.summarize(transcript)
-                        if summary:
-                            writer.insert_summary(summary)
-                    self._errors.clear(ERR_SUMMARIZATION)
-                except Exception as e:
-                    logger.exception("Summarization failed")
-                    self._errors.report(
-                        ERR_SUMMARIZATION,
-                        str(e),
-                    )
-
-                # Done
-                self.status_item.title = f"Saved: {file_path}"
-                rumps.notification(
-                    APP_NAME,
-                    "Recording saved",
-                    str(file_path),
-                )
+                self._run_post_processing(writer, file_path, full_audio, transcript_segments)
 
             threading.Thread(target=_post_process, name="PostProcess", daemon=True).start()
         else:
             self.status_item.title = "Idle"
+
+    def _run_post_processing(self, writer, file_path, full_audio, transcript_segments):
+        """Run diarization and summarization sequentially, loading one model at a time.
+
+        Model lifecycle:
+        1. Unload whisper (no longer needed)
+        2. Load diarizer → run → unload diarizer
+        3. Load summarizer → run → unload summarizer
+        4. Reload whisper (ready for next recording)
+        """
+        # Step 1: Unload whisper to free ~460MB
+        logger.info("Unloading whisper model to free memory for post-processing...")
+        self._transcriber_preload.unload_model()
+        _free_memory()
+
+        # Step 2: Speaker diarization
+        if DIARIZATION_ENABLED and full_audio is not None:
+            self.status_item.title = "Identifying speakers..."
+            diarizer = Diarizer()
+            try:
+                diarizer.load_pipeline()
+                if diarizer.is_ready():
+                    speaker_segments = diarizer.diarize(full_audio, TARGET_SAMPLE_RATE)
+                    if speaker_segments:
+                        labelled = assign_speakers_to_transcript(
+                            transcript_segments,
+                            speaker_segments,
+                            chunk_duration=CHUNK_DURATION_SECONDS,
+                        )
+                        writer.update_with_speakers(labelled)
+                    self._errors.clear(ERR_DIARIZATION)
+                elif diarizer.loading_error:
+                    self._errors.report(ERR_DIARIZER, str(diarizer.loading_error))
+            except Exception as e:
+                logger.exception("Diarization failed")
+                self._errors.report(ERR_DIARIZATION, str(e))
+            finally:
+                diarizer.unload_pipeline()
+                del diarizer
+                _free_memory()
+
+        # Free the raw audio — no longer needed
+        del full_audio
+        _free_memory()
+
+        # Step 3: Summarization
+        self.status_item.title = "Summarizing..."
+        summarizer = Summarizer()
+        try:
+            summarizer.load_model()
+            if summarizer._loading_error:
+                self._errors.report(ERR_SUMMARIZER, str(summarizer._loading_error))
+            else:
+                transcript = writer.get_transcript_text()
+                if transcript.strip():
+                    summary = summarizer.summarize(transcript)
+                    if summary:
+                        writer.insert_summary(summary)
+                self._errors.clear(ERR_SUMMARIZATION)
+        except Exception as e:
+            logger.exception("Summarization failed")
+            self._errors.report(ERR_SUMMARIZATION, str(e))
+        finally:
+            summarizer.unload_model()
+            del summarizer
+            _free_memory()
+
+        # Step 4: Reload whisper for the next recording
+        logger.info("Reloading whisper model for next recording...")
+        self.status_item.title = "Reloading transcription model..."
+        self._load_whisper()
+
+        # Done
+        self.status_item.title = f"Saved: {file_path}"
+        rumps.notification(
+            APP_NAME,
+            "Recording saved",
+            str(file_path),
+        )
 
     def on_quit(self, _sender):
         """Clean shutdown."""

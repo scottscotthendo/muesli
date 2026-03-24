@@ -73,6 +73,13 @@ class Diarizer:
     def is_ready(self) -> bool:
         return self._pipeline_ready.is_set() and self._loading_error is None
 
+    def unload_pipeline(self):
+        """Release the diarization pipeline to free memory."""
+        self._pipeline = None
+        self._pipeline_ready.clear()
+        self._loading_error = None
+        logger.info("Diarization pipeline unloaded.")
+
     def diarize(self, audio: np.ndarray, sample_rate: int = 16000) -> list[SpeakerSegment]:
         """Run diarization on a complete audio array.
 
