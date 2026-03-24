@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+# Full setup for Meeting Recorder on a fresh Mac.
+#
+# What it does:
+#   1. Installs Homebrew (if missing)
+#   2. Installs Python 3.12 and BlackHole 2ch via brew
+#   3. Creates a virtualenv and installs all dependencies
+#   4. Pre-downloads the whisper and summarization models
+#   5. Builds the .app bundle and copies it to /Applications
+#   6. Prints manual steps (Audio MIDI setup, Google Calendar)
+#
+# Usage:
+#   ./scripts/setup.sh
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+BOLD="\033[1m"
+GREEN="\033[32m"
+YELLOW="\033[33m"
+RESET="\033[0m"
+
+step() { echo -e "\n${GREEN}${BOLD}==> $1${RESET}"; }
+warn() { echo -e "${YELLOW}    $1${RESET}"; }
+
+# -------------------------------------------------------------------
+# 1. Homebrew
+# -------------------------------------------------------------------
+step "Checking Homebrew..."
+if command -v brew &>/dev/null; then
+    echo "    Homebrew found."
+else
+    echo "    Installing Homebrew..."
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)"
+fi
+
+# -------------------------------------------------------------------
+# 2. Python 3.12
+# -------------------------------------------------------------------
+step "Checking Python 3.12..."
+if brew list python@3.12 &>/dev/null; then
+    echo "    python@3.12 already installed."
+else
+    echo "    Installing python@3.12..."
+    brew install python@3.12
+fi
+
+PYTHON="$(brew --prefix python@3.12)/bin/python3.12"
+if [ ! -x "$PYTHON" ]; then
+    echo "Error: python3.12 not found at $PYTHON"
+    exit 1
+fi
+echo "    Using: $PYTHON"
+
+# -------------------------------------------------------------------
+# 3. BlackHole virtual audio driver
+# -------------------------------------------------------------------
+step "Checking BlackHole 2ch..."
+if brew list blackhole-2ch &>/dev/null; then
+    echo "    BlackHole 2ch already installed."
+else
+    echo "    Installing BlackHole 2ch..."
+    brew install blackhole-2ch
+fi
+
+# -------------------------------------------------------------------
+# 4. Virtual environment + dependencies
+# -------------------------------------------------------------------
+step "Setting up Python environment..."
+if [ -d .venv ]; then
+    echo "    .venv already exists."
+else
+    echo "    Creating virtualenv..."
+    "$PYTHON" -m venv .venv
+fi
+
+source .venv/bin/activate
+echo "    Installing dependencies..."
+pip install --upgrade pip --quiet
+pip install -e . --quiet
+pip install py2app --quiet
+
+# -------------------------------------------------------------------
+# 5. Pre-download models
+# -------------------------------------------------------------------
+step "Pre-downloading models (this may take a few minutes on first run)..."
+
+echo "    Downloading whisper model (small.en, ~460MB)..."
+python -c "
+from faster_whisper import WhisperModel
+WhisperModel('small.en', device='cpu', compute_type='int8')
+print('    Whisper model ready.')
+"
+
+echo "    Downloading summarization model (Qwen2.5-1.5B, ~1GB)..."
+python -c "
+from meeting_recorder.summarizer import _ensure_model
+_ensure_model()
+print('    Summarization model ready.')
+"
+
+# -------------------------------------------------------------------
+# 6. Build .app and install
+# -------------------------------------------------------------------
+step "Building Meeting Recorder.app..."
+./scripts/build_app.sh
+
+step "Installing to /Applications..."
+if [ -d "/Applications/Meeting Recorder.app" ]; then
+    echo "    Removing previous version..."
+    rm -rf "/Applications/Meeting Recorder.app"
+fi
+cp -R dist/app.app "/Applications/Meeting Recorder.app"
+echo "    Installed: /Applications/Meeting Recorder.app"
+
+# -------------------------------------------------------------------
+# 7. Manual steps
+# -------------------------------------------------------------------
+step "Almost done! A couple of manual steps:"
+
+echo ""
+echo -e "  ${BOLD}1. Set up audio routing (required):${RESET}"
+echo "     - Open Audio MIDI Setup (Spotlight → 'Audio MIDI Setup')"
+echo "     - Click + → Create Multi-Output Device"
+echo "     - Check both your speakers/headphones AND BlackHole 2ch"
+echo "     - In System Settings → Sound → Output, select the Multi-Output Device"
+echo ""
+echo -e "  ${BOLD}2. Google Calendar integration (optional):${RESET}"
+echo "     - Create OAuth credentials at https://console.cloud.google.com"
+echo "     - Enable the Google Calendar API"
+echo "     - Download credentials.json to ~/.config/meeting-recorder/"
+echo "     - The app will prompt you to authorize on first calendar check"
+echo ""
+echo -e "  ${BOLD}3. Launch on startup (optional):${RESET}"
+echo "     - System Settings → General → Login Items"
+echo "     - Add 'Meeting Recorder'"
+echo ""
+
+step "Done! Launch with:"
+echo "    open '/Applications/Meeting Recorder.app'"
+echo ""
