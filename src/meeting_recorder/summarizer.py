@@ -9,8 +9,8 @@ from meeting_recorder.config import CONFIG_DIR
 logger = logging.getLogger(__name__)
 
 # Model settings
-MODEL_REPO = "Qwen/Qwen2.5-3B-Instruct-GGUF"
-MODEL_FILENAME = "qwen2.5-3b-instruct-q4_k_m.gguf"
+MODEL_REPO = "Qwen/Qwen2.5-1.5B-Instruct-GGUF"
+MODEL_FILENAME = "qwen2.5-1.5b-instruct-q4_k_m.gguf"
 MODEL_DIR = CONFIG_DIR / "models"
 
 SUMMARY_PROMPT = """\
@@ -41,7 +41,7 @@ def _ensure_model() -> Path:
 
     from huggingface_hub import hf_hub_download
 
-    logger.info("Downloading summarization model (%s) — this is a one-time ~2GB download...", MODEL_FILENAME)
+    logger.info("Downloading summarization model (%s) — this is a one-time ~1GB download...", MODEL_FILENAME)
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
     downloaded = hf_hub_download(
