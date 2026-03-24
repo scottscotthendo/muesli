@@ -16,6 +16,7 @@ from meeting_recorder.config import (
     ICON_RECORDING,
 )
 from meeting_recorder.recorder import AudioRecorder
+from meeting_recorder.summarizer import Summarizer
 from meeting_recorder.transcriber import Transcriber
 from meeting_recorder.transcript_writer import TranscriptWriter
 
@@ -59,6 +60,10 @@ class MeetingRecorderApp(rumps.App):
         # Pre-load whisper model
         self._transcriber_preload = Transcriber(queue.Queue(), queue.Queue(), threading.Event())
         self._transcriber_preload.load_model_async()
+
+        # Pre-load summarization model
+        self._summarizer = Summarizer()
+        self._summarizer.load_model_async()
 
         # Timers
         self._ui_timer = rumps.Timer(self._on_ui_tick, 1)
@@ -205,27 +210,43 @@ class MeetingRecorderApp(rumps.App):
                 except queue.Empty:
                     break
 
-        # Close writer
+        # Close writer and run summarization
         file_path = None
-        if self._writer:
-            file_path = self._writer.file_path
-            self._writer.close()
+        writer = self._writer
+        if writer:
+            file_path = writer.file_path
+            writer.close()
 
         # Update UI
         self.start_stop_button.title = "Start Recording"
         self.title = ICON_IDLE
 
         if file_path:
-            self.status_item.title = f"Saved: {file_path}"
-            rumps.notification(
-                APP_NAME,
-                "Recording saved",
-                str(file_path),
-            )
+            self.status_item.title = "Summarizing..."
+            logger.info("Recording stopped. Summarizing: %s", file_path)
+
+            # Run summarization in background thread to keep UI responsive
+            def _summarize():
+                try:
+                    transcript = writer.get_transcript_text()
+                    if transcript.strip():
+                        summary = self._summarizer.summarize(transcript)
+                        if summary:
+                            writer.insert_summary(summary)
+                except Exception:
+                    logger.exception("Summarization failed")
+
+                # Update UI on completion (rumps is thread-safe for title/menu updates)
+                self.status_item.title = f"Saved: {file_path}"
+                rumps.notification(
+                    APP_NAME,
+                    "Recording saved",
+                    str(file_path),
+                )
+
+            threading.Thread(target=_summarize, name="Summarizer", daemon=True).start()
         else:
             self.status_item.title = "Idle"
-
-        logger.info("Recording stopped. File: %s", file_path)
 
     def on_quit(self, _sender):
         """Clean shutdown."""
