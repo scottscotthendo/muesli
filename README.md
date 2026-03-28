@@ -13,6 +13,7 @@ No cloud. No subscription. No data leaves your machine. Muesli sits in your menu
 - **Rolling 30-second chunks** — transcript updates in near real-time
 - **Google Calendar integration** — detects meetings starting within 10 minutes and prompts you to record
 - **AI-powered summaries** — after recording stops, a local LLM (Qwen2.5-1.5B) generates key decisions, action items, and topics
+- **Notion sync** — optionally pushes meeting title, date, attendees, summary, and action items to a Notion database
 - **Markdown output** — clean, timestamped transcripts saved to `~/meetings/`
 
 ## Quick Start
@@ -72,7 +73,26 @@ To enable speaker identification ("who said what"):
 
 > **Note:** torch is ~2GB. Diarization runs post-recording and adds speaker labels (e.g. `**SPEAKER_00:**`) to the transcript. If not installed, the app works fine without it.
 
-### 4. Google Calendar Credentials (Optional)
+### 4. Notion Integration (Optional)
+
+Automatically sync each meeting to a Notion database after recording:
+
+1. Go to [Notion Integrations](https://www.notion.so/profile/integrations) and click **New integration**
+2. Name it (e.g. "Muesli"), select your workspace, and create it
+3. Copy the **Internal Integration Secret** (starts with `ntn_`)
+4. Save the token:
+   ```bash
+   mkdir -p ~/.config/muesli
+   echo "ntn_YOUR_TOKEN_HERE" > ~/.config/muesli/notion_token
+   ```
+5. Share your Notion database with the integration: open the database page → **...** menu → **Connections** → add your integration
+6. Update the database ID in `src/meeting_recorder/config.py` (`NOTION_DATABASE_ID`) to match your database
+
+The database should have these properties: **Call Title** (title), **Date** (date), **Attendees** (text), **Summary** (text), **Action Items** (text). Extra columns are fine — they'll just be left empty.
+
+> **Note:** The token is stored locally at `~/.config/muesli/notion_token` and never committed to the repo. If the token is not configured, Notion sync is silently skipped.
+
+### 5. Google Calendar Credentials (Optional)
 
 To enable calendar integration:
 
@@ -152,7 +172,8 @@ open dist/app.app
 6. The menubar shows elapsed time while recording
 7. Click **Stop Recording** when done
 8. The app runs post-processing: speaker diarization (if installed), then AI summarization
-9. A notification shows the path to the saved transcript
+9. If Notion is configured, the meeting record is synced to your database
+10. A notification shows the path to the saved transcript
 
 ## Transcript Format
 
