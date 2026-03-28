@@ -62,13 +62,13 @@ class MeetingRecorderApp(rumps.App):
         self.status_item.set_callback(None)
         self._error_separator = rumps.separator
         self._error_menu_items: list[rumps.MenuItem] = []
-        self.quit_button = rumps.MenuItem("Quit", callback=self.on_quit)
+        self._quit_item = rumps.MenuItem("Quit", callback=self.on_quit)
 
         self.menu = [
             self.start_stop_button,
             self.status_item,
             self._error_separator,
-            self.quit_button,
+            self._quit_item,
         ]
 
         # State
@@ -164,7 +164,7 @@ class MeetingRecorderApp(rumps.App):
 
             self._error_menu_items.append(item)
             # Insert before Quit
-            self.menu.insert_before(self.quit_button.title, item)
+            self.menu.insert_before(self._quit_item.title, item)
 
     def _on_retry_click(self, component: str):
         """Handle clicking an error menu item to retry."""
