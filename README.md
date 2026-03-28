@@ -1,6 +1,6 @@
 # Muesli
 
-**The DIY Granola.** A free, open-source, fully local meeting transcription app for macOS.
+A free, open-source, fully local meeting transcription app for macOS.
 
 No cloud. No subscription. No data leaves your machine. Muesli sits in your menubar, records both sides of your calls (system audio + mic), transcribes with [faster-whisper](https://github.com/SYSTRAN/faster-whisper), identifies speakers with [pyannote.audio](https://github.com/pyannote/pyannote-audio), and generates AI summaries — all on-device. Integrates with Google Calendar to auto-detect meetings.
 
