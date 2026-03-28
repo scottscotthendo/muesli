@@ -1,15 +1,27 @@
 # Meeting Recorder
 
-A macOS menubar app that records system audio and transcribes meetings locally using [faster-whisper](https://github.com/SYSTRAN/faster-whisper). Integrates with Google Calendar to auto-detect upcoming meetings and pre-populate transcript headers.
+A macOS menubar app that records system audio **and your microphone**, transcribes meetings locally using [faster-whisper](https://github.com/SYSTRAN/faster-whisper), and optionally identifies speakers with [pyannote.audio](https://github.com/pyannote/pyannote-audio). Integrates with Google Calendar to auto-detect upcoming meetings and pre-populate transcript headers.
 
 ## Features
 
 - **Menubar-only app** — no dock icon, stays out of the way
+- **Full conversation capture** — records both system audio (via BlackHole) and your microphone, so both sides of the conversation are transcribed
 - **Local transcription** — all audio is transcribed on-device using faster-whisper (small.en model)
+- **Speaker diarization** — optionally identifies who said what using pyannote.audio (requires Hugging Face token)
 - **Rolling 30-second chunks** — transcript updates in near real-time
 - **Google Calendar integration** — detects meetings starting within 10 minutes and prompts you to record
 - **AI-powered summaries** — after recording stops, a local LLM (Qwen2.5-1.5B) generates key decisions, action items, and topics
 - **Markdown output** — clean, timestamped transcripts saved to `~/meetings/`
+
+## Quick Start
+
+The fastest way to get running:
+
+```bash
+./scripts/setup.sh
+```
+
+This installs all dependencies, downloads models, builds the app, and copies it to `/Applications`. See below for manual setup if you prefer.
 
 ## Prerequisites
 
@@ -21,7 +33,9 @@ Install [BlackHole](https://existential.audio/blackhole/) (2ch version recommend
 brew install blackhole-2ch
 ```
 
-After installing, set up audio routing so you can both hear and record system audio:
+> **Important:** BlackHole requires a **reboot** after installation to load the audio driver.
+
+After rebooting, set up audio routing so you can both hear and record system audio:
 
 1. Open **Audio MIDI Setup** (search in Spotlight)
 2. Click **+** → **Create Multi-Output Device**
@@ -36,7 +50,27 @@ brew install python@3.12
 
 > **Note:** Python 3.13 is not supported (faster-whisper lacks wheels).
 
-### 3. Google Calendar Credentials
+### 3. Speaker Diarization (Optional)
+
+To enable speaker identification ("who said what"):
+
+1. Create a [Hugging Face](https://huggingface.co/settings/tokens) account and generate a **read** access token
+2. Accept the model terms for both:
+   - https://huggingface.co/pyannote/speaker-diarization-3.1
+   - https://huggingface.co/pyannote/segmentation-3.0
+3. Log in:
+   ```bash
+   source .venv/bin/activate
+   python -c "from huggingface_hub import login; login()"
+   ```
+4. Install the diarization dependencies:
+   ```bash
+   pip install "pyannote.audio>=3.1" "torch>=2.0"
+   ```
+
+> **Note:** torch is ~2GB. Diarization runs post-recording and adds speaker labels (e.g. `**SPEAKER_00:**`) to the transcript. If not installed, the app works fine without it.
+
+### 4. Google Calendar Credentials (Optional)
 
 To enable calendar integration:
 
@@ -76,14 +110,18 @@ If your work Google Calendar is shared to your personal Gmail account with read-
 ### From Source
 
 ```bash
-git clone https://github.com/your-repo/meeting-recorder.git
-cd meeting-recorder
+git clone https://github.com/scottscotthendo/Meeting-recorder.git
+cd Meeting-recorder
+brew install python@3.12
+/opt/homebrew/bin/python3.12 -m venv .venv
+source .venv/bin/activate
 pip install -e .
 ```
 
 Run:
 
 ```bash
+source .venv/bin/activate
 meeting-recorder
 ```
 
@@ -111,7 +149,7 @@ open dist/app.app
 5. Click **Start Recording** (or accept the calendar prompt)
 6. The menubar shows elapsed time while recording
 7. Click **Stop Recording** when done
-8. The menubar shows "Summarizing..." while the LLM generates a summary
+8. The app runs post-processing: speaker diarization (if installed), then AI summarization
 9. A notification shows the path to the saved transcript
 
 ## Transcript Format
@@ -149,11 +187,22 @@ Attendees: alice@company.com, bob@company.com
 
 **"BlackHole audio device not found"**
 - Ensure BlackHole is installed: `brew install blackhole-2ch`
+- **Reboot your Mac** after installing — the audio driver won't load until you do
 - The app searches for devices starting with "BlackHole"
 
 **No audio being captured**
 - Make sure your system audio output is set to the Multi-Output Device (not just BlackHole)
 - Check that BlackHole is included in the Multi-Output Device
+
+**Only other people's audio is transcribed, not mine**
+- The app records from both BlackHole (system audio) and your default microphone
+- Check **System Settings → Privacy & Security → Microphone** and ensure the app (or Terminal) has permission
+
+**Diarization error: "403 Client Error"**
+- You need to accept the model terms on Hugging Face for **both** models:
+  - https://huggingface.co/pyannote/speaker-diarization-3.1
+  - https://huggingface.co/pyannote/segmentation-3.0
+- Make sure you're logged in: `python -c "from huggingface_hub import login; login()"`
 
 **"Google OAuth credentials not found"**
 - Place your `credentials.json` at `~/.config/meeting-recorder/credentials.json`
@@ -162,4 +211,4 @@ Attendees: alice@company.com, bob@company.com
 - This is expected in testing mode (7-day expiry). The app handles re-auth automatically.
 
 **Model download is slow**
-- The `small.en` model is ~460MB. First-run download depends on your internet speed. After that, the model is cached locally.
+- The `small.en` model is ~460MB, the summarization model is ~1GB. First-run download depends on your internet speed. After that, models are cached locally.

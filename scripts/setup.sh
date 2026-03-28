@@ -62,6 +62,7 @@ if brew list blackhole-2ch &>/dev/null; then
 else
     echo "    Installing BlackHole 2ch..."
     brew install blackhole-2ch
+    BLACKHOLE_JUST_INSTALLED=true
 fi
 
 # -------------------------------------------------------------------
@@ -125,7 +126,37 @@ osascript -e 'tell application "System Events" to make login item at end with pr
 # -------------------------------------------------------------------
 # 8. Manual steps
 # -------------------------------------------------------------------
-step "Almost done! A couple of manual steps:"
+step "Speaker diarization (optional)..."
+echo ""
+echo "    Diarization identifies who said what in the transcript."
+echo "    It requires ~2GB of additional downloads (torch + pyannote.audio)."
+echo ""
+read -p "    Install diarization support? [y/N] " -n 1 -r
+echo ""
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo "    Installing torch and pyannote.audio..."
+    pip install "pyannote.audio>=3.1" "torch>=2.0" --quiet
+    echo ""
+    echo "    To complete diarization setup, you need to:"
+    echo "    1. Create a Hugging Face token at https://huggingface.co/settings/tokens"
+    echo "    2. Accept model terms at:"
+    echo "       - https://huggingface.co/pyannote/speaker-diarization-3.1"
+    echo "       - https://huggingface.co/pyannote/segmentation-3.0"
+    echo "    3. Log in:"
+    echo '       source .venv/bin/activate && python -c "from huggingface_hub import login; login()"'
+    echo ""
+fi
+
+# -------------------------------------------------------------------
+# 9. Manual steps
+# -------------------------------------------------------------------
+step "Almost done! Manual steps:"
+
+if [ "${BLACKHOLE_JUST_INSTALLED:-}" = true ]; then
+    echo ""
+    echo -e "  ${YELLOW}${BOLD}0. REBOOT YOUR MAC${RESET}"
+    echo -e "  ${YELLOW}   BlackHole was just installed and requires a reboot to load the audio driver.${RESET}"
+fi
 
 echo ""
 echo -e "  ${BOLD}1. Set up audio routing (required):${RESET}"
