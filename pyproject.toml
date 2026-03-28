@@ -3,9 +3,9 @@ requires = ["setuptools>=68.0", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "meeting-recorder"
+name = "muesli"
 version = "0.1.0"
-description = "macOS menubar app that records and transcribes meetings"
+description = "macOS menubar app that records and transcribes meetings — the DIY Granola"
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "rumps>=0.4.0",
@@ -27,7 +27,7 @@ diarization = [
 ]
 
 [project.scripts]
-meeting-recorder = "meeting_recorder.app:main"
+muesli = "meeting_recorder.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

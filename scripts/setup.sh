@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Full setup for Meeting Recorder on a fresh Mac.
+# Full setup for Muesli on a fresh Mac.
 #
 # What it does:
 #   1. Installs Homebrew (if missing)
@@ -104,23 +104,23 @@ print('    Summarization model ready.')
 # -------------------------------------------------------------------
 # 6. Build .app and install
 # -------------------------------------------------------------------
-step "Building Hendos Meeting Recorder.app..."
+step "Building Muesli.app..."
 ./scripts/build_app.sh
 
 step "Installing to /Applications..."
-if [ -d "/Applications/Hendos Meeting Recorder.app" ]; then
+if [ -d "/Applications/Muesli.app" ]; then
     echo "    Removing previous version..."
-    rm -rf "/Applications/Hendos Meeting Recorder.app"
+    rm -rf "/Applications/Muesli.app"
 fi
-cp -R dist/app.app "/Applications/Hendos Meeting Recorder.app"
-echo "    Installed: /Applications/Hendos Meeting Recorder.app"
+cp -R dist/app.app "/Applications/Muesli.app"
+echo "    Installed: /Applications/Muesli.app"
 
 # -------------------------------------------------------------------
 # 7. Add to Login Items (auto-launch on boot)
 # -------------------------------------------------------------------
 step "Adding to Login Items (auto-launch on boot)..."
-osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/Hendos Meeting Recorder.app", hidden:true}' 2>/dev/null && \
-    echo "    Meeting Recorder will launch automatically on login." || \
+osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/Muesli.app", hidden:true}' 2>/dev/null && \
+    echo "    Muesli will launch automatically on login." || \
     warn "Could not add to Login Items — you can do this manually in System Settings → General → Login Items."
 
 # -------------------------------------------------------------------
@@ -168,10 +168,10 @@ echo ""
 echo -e "  ${BOLD}2. Google Calendar integration (optional):${RESET}"
 echo "     - Create OAuth credentials at https://console.cloud.google.com"
 echo "     - Enable the Google Calendar API"
-echo "     - Download credentials.json to ~/.config/meeting-recorder/"
+echo "     - Download credentials.json to ~/.config/muesli/"
 echo "     - The app will prompt you to authorize on first calendar check"
 echo ""
 
 step "Done! Launch with:"
-echo "    open '/Applications/Hendos Meeting Recorder.app'"
+echo "    open '/Applications/Muesli.app'"
 echo ""

@@ -1,4 +1,4 @@
-"""Error tracking and retry management for the meeting recorder UI."""
+"""Error tracking and retry management for the Muesli UI."""
 
 import logging
 import threading

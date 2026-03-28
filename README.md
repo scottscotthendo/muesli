@@ -1,6 +1,8 @@
-# Meeting Recorder
+# Muesli
 
-A macOS menubar app that records system audio **and your microphone**, transcribes meetings locally using [faster-whisper](https://github.com/SYSTRAN/faster-whisper), and optionally identifies speakers with [pyannote.audio](https://github.com/pyannote/pyannote-audio). Integrates with Google Calendar to auto-detect upcoming meetings and pre-populate transcript headers.
+**The DIY Granola.** A free, open-source, fully local meeting transcription app for macOS.
+
+No cloud. No subscription. No data leaves your machine. Muesli sits in your menubar, records both sides of your calls (system audio + mic), transcribes with [faster-whisper](https://github.com/SYSTRAN/faster-whisper), identifies speakers with [pyannote.audio](https://github.com/pyannote/pyannote-audio), and generates AI summaries — all on-device. Integrates with Google Calendar to auto-detect meetings.
 
 ## Features
 
@@ -82,7 +84,7 @@ To enable calendar integration:
 6. Application type: **Desktop app**
 7. Download the JSON file and save it as:
    ```
-   ~/.config/meeting-recorder/credentials.json
+   ~/.config/muesli/credentials.json
    ```
 
 #### OAuth Consent Screen Setup
@@ -93,7 +95,7 @@ To enable calendar integration:
 4. Add scope: `https://www.googleapis.com/auth/calendar.readonly`
 5. Add your Gmail address as a **test user**
 
-> **Important:** Since this app is in "testing mode", you'll see an "unverified app" warning on first auth. Click **Advanced** → **Go to Meeting Recorder (unsafe)** to proceed. This is expected for personal apps.
+> **Important:** Since this app is in "testing mode", you'll see an "unverified app" warning on first auth. Click **Advanced** → **Go to Muesli (unsafe)** to proceed. This is expected for personal apps.
 
 #### Work Calendar on Personal Gmail
 
@@ -110,8 +112,8 @@ If your work Google Calendar is shared to your personal Gmail account with read-
 ### From Source
 
 ```bash
-git clone https://github.com/scottscotthendo/Meeting-recorder.git
-cd Meeting-recorder
+git clone https://github.com/scottscotthendo/muesli.git
+cd muesli
 brew install python@3.12
 /opt/homebrew/bin/python3.12 -m venv .venv
 source .venv/bin/activate
@@ -122,7 +124,7 @@ Run:
 
 ```bash
 source .venv/bin/activate
-meeting-recorder
+muesli
 ```
 
 ### Build .app Bundle
@@ -137,7 +139,7 @@ open dist/app.app
 
 ```bash
 ./scripts/create_dmg.sh
-# Output: dist/MeetingRecorder-0.1.0.dmg
+# Output: dist/Muesli-0.1.0.dmg
 ```
 
 ## Usage
@@ -205,7 +207,7 @@ Attendees: alice@company.com, bob@company.com
 - Make sure you're logged in: `python -c "from huggingface_hub import login; login()"`
 
 **"Google OAuth credentials not found"**
-- Place your `credentials.json` at `~/.config/meeting-recorder/credentials.json`
+- Place your `credentials.json` at `~/.config/muesli/credentials.json`
 
 **OAuth token keeps expiring**
 - This is expected in testing mode (7-day expiry). The app handles re-auth automatically.

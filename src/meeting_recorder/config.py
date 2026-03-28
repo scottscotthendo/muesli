@@ -1,10 +1,10 @@
-"""Paths, constants, and settings for Meeting Recorder."""
+"""Paths, constants, and settings for Muesli."""
 
 import os
 from pathlib import Path
 
 # Directories
-CONFIG_DIR = Path(os.path.expanduser("~/.config/meeting-recorder"))
+CONFIG_DIR = Path(os.path.expanduser("~/.config/muesli"))
 MEETINGS_DIR = Path(os.path.expanduser("~/meetings"))
 
 # Google OAuth
@@ -32,7 +32,7 @@ CALENDAR_CHECK_INTERVAL_SECONDS = 60
 DIARIZATION_ENABLED = True  # Set to False to skip speaker identification
 
 # UI
-APP_NAME = "Hendos Meeting Recorder"
+APP_NAME = "Muesli"
 ICON_IDLE = "🎙"
 ICON_RECORDING = "🔴"
 ICON_ERROR = "⚠️"
