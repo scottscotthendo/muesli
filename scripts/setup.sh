@@ -54,15 +54,18 @@ fi
 echo "    Using: $PYTHON"
 
 # -------------------------------------------------------------------
-# 3. BlackHole virtual audio driver
+# 3. Build ScreenCaptureKit audio helper
 # -------------------------------------------------------------------
-step "Checking BlackHole 2ch..."
-if brew list blackhole-2ch &>/dev/null; then
-    echo "    BlackHole 2ch already installed."
+step "Building audio capture helper..."
+AUDIO_TAP_SRC="src/meeting_recorder/audio_tap.swift"
+AUDIO_TAP_BIN="src/meeting_recorder/audio_tap"
+if [ -f "$AUDIO_TAP_BIN" ] && [ "$AUDIO_TAP_BIN" -nt "$AUDIO_TAP_SRC" ]; then
+    echo "    audio_tap binary is up to date."
 else
-    echo "    Installing BlackHole 2ch..."
-    brew install blackhole-2ch
-    BLACKHOLE_JUST_INSTALLED=true
+    echo "    Compiling audio_tap..."
+    swiftc -O -o "$AUDIO_TAP_BIN" "$AUDIO_TAP_SRC" \
+        -framework ScreenCaptureKit -framework CoreMedia -framework AVFoundation
+    echo "    audio_tap compiled successfully."
 fi
 
 # -------------------------------------------------------------------
@@ -150,26 +153,24 @@ fi
 # -------------------------------------------------------------------
 # 9. Manual steps
 # -------------------------------------------------------------------
-step "Almost done! Manual steps:"
-
-if [ "${BLACKHOLE_JUST_INSTALLED:-}" = true ]; then
-    echo ""
-    echo -e "  ${YELLOW}${BOLD}0. REBOOT YOUR MAC${RESET}"
-    echo -e "  ${YELLOW}   BlackHole was just installed and requires a reboot to load the audio driver.${RESET}"
-fi
+step "Almost done! Optional setup:"
 
 echo ""
-echo -e "  ${BOLD}1. Set up audio routing (required):${RESET}"
-echo "     - Open Audio MIDI Setup (Spotlight → 'Audio MIDI Setup')"
-echo "     - Click + → Create Multi-Output Device"
-echo "     - Check both your speakers/headphones AND BlackHole 2ch"
-echo "     - In System Settings → Sound → Output, select the Multi-Output Device"
+echo -e "  ${BOLD}1. Screen Recording permission (required on first run):${RESET}"
+echo "     - macOS will prompt you to grant Screen Recording access"
+echo "     - This is needed for ScreenCaptureKit to capture system audio"
+echo "     - Go to System Settings → Privacy & Security → Screen Recording if needed"
 echo ""
 echo -e "  ${BOLD}2. Google Calendar integration (optional):${RESET}"
 echo "     - Create OAuth credentials at https://console.cloud.google.com"
 echo "     - Enable the Google Calendar API"
 echo "     - Download credentials.json to ~/.config/muesli/"
 echo "     - The app will prompt you to authorize on first calendar check"
+echo ""
+echo -e "  ${BOLD}3. Notion sync (optional):${RESET}"
+echo "     - Create a Notion integration at https://www.notion.so/profile/integrations"
+echo "     - Save token: echo 'ntn_YOUR_TOKEN' > ~/.config/muesli/notion_token"
+echo "     - Share your Notion database with the integration"
 echo ""
 
 step "Done! Launch with:"

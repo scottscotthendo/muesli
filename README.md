@@ -2,12 +2,12 @@
 
 A free, open-source, fully local meeting transcription app for macOS.
 
-No cloud. No subscription. No data leaves your machine. Muesli sits in your menubar, records both sides of your calls (system audio + mic), transcribes with [faster-whisper](https://github.com/SYSTRAN/faster-whisper), identifies speakers with [pyannote.audio](https://github.com/pyannote/pyannote-audio), and generates AI summaries — all on-device. Integrates with Google Calendar to auto-detect meetings.
+No cloud. No subscription. No data leaves your machine. Muesli sits in your menubar, records both sides of your calls (system audio + mic) using macOS ScreenCaptureKit, transcribes with [faster-whisper](https://github.com/SYSTRAN/faster-whisper), identifies speakers with [pyannote.audio](https://github.com/pyannote/pyannote-audio), and generates AI summaries — all on-device. Integrates with Google Calendar and Notion.
 
 ## Features
 
 - **Menubar-only app** — no dock icon, stays out of the way
-- **Full conversation capture** — records both system audio (via BlackHole) and your microphone, so both sides of the conversation are transcribed
+- **Full conversation capture** — records system audio (via ScreenCaptureKit) and your microphone — works with any headphones, speakers, or audio output with zero configuration
 - **Local transcription** — all audio is transcribed on-device using faster-whisper (small.en model)
 - **Speaker diarization** — optionally identifies who said what using pyannote.audio (requires Hugging Face token)
 - **Rolling 30-second chunks** — transcript updates in near real-time
@@ -26,26 +26,14 @@ The fastest way to get running:
 
 This installs all dependencies, downloads models, builds the app, and copies it to `/Applications`. See below for manual setup if you prefer.
 
+## Requirements
+
+- **macOS 13 (Ventura) or later** — for ScreenCaptureKit system audio capture
+- **Xcode Command Line Tools** — to compile the audio capture helper (`xcode-select --install`)
+
 ## Prerequisites
 
-### 1. BlackHole Virtual Audio Driver
-
-Install [BlackHole](https://existential.audio/blackhole/) (2ch version recommended):
-
-```bash
-brew install blackhole-2ch
-```
-
-> **Important:** BlackHole requires a **reboot** after installation to load the audio driver.
-
-After rebooting, set up audio routing so you can both hear and record system audio:
-
-1. Open **Audio MIDI Setup** (search in Spotlight)
-2. Click **+** → **Create Multi-Output Device**
-3. Check both your speakers/headphones AND **BlackHole 2ch**
-4. Set this Multi-Output Device as your system audio output in **System Settings → Sound**
-
-### 2. Python 3.12
+### 1. Python 3.12
 
 ```bash
 brew install python@3.12
@@ -53,7 +41,7 @@ brew install python@3.12
 
 > **Note:** Python 3.13 is not supported (faster-whisper lacks wheels).
 
-### 3. Speaker Diarization (Optional)
+### 2. Speaker Diarization (Optional)
 
 To enable speaker identification ("who said what"):
 
@@ -73,7 +61,7 @@ To enable speaker identification ("who said what"):
 
 > **Note:** torch is ~2GB. Diarization runs post-recording and adds speaker labels (e.g. `**SPEAKER_00:**`) to the transcript. If not installed, the app works fine without it.
 
-### 4. Notion Integration (Optional)
+### 3. Notion Integration (Optional)
 
 Automatically sync each meeting to a Notion database after recording:
 
@@ -92,7 +80,7 @@ The database should have these properties: **Call Title** (title), **Date** (dat
 
 > **Note:** The token is stored locally at `~/.config/muesli/notion_token` and never committed to the repo. If the token is not configured, Notion sync is silently skipped.
 
-### 5. Google Calendar Credentials (Optional)
+### 4. Google Calendar Credentials (Optional)
 
 To enable calendar integration:
 
@@ -138,6 +126,10 @@ brew install python@3.12
 /opt/homebrew/bin/python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -e .
+
+# Build the ScreenCaptureKit audio helper
+swiftc -O -o src/meeting_recorder/audio_tap src/meeting_recorder/audio_tap.swift \
+    -framework ScreenCaptureKit -framework CoreMedia -framework AVFoundation
 ```
 
 Run:
@@ -146,6 +138,8 @@ Run:
 source .venv/bin/activate
 muesli
 ```
+
+> **Note:** On first run, macOS will prompt you to grant **Screen Recording** permission. This is required for ScreenCaptureKit to capture system audio.
 
 ### Build .app Bundle
 
@@ -208,17 +202,16 @@ Attendees: alice@company.com, bob@company.com
 
 ## Troubleshooting
 
-**"BlackHole audio device not found"**
-- Ensure BlackHole is installed: `brew install blackhole-2ch`
-- **Reboot your Mac** after installing — the audio driver won't load until you do
-- The app searches for devices starting with "BlackHole"
+**"audio_tap binary not found"**
+- Compile it: `swiftc -O -o src/meeting_recorder/audio_tap src/meeting_recorder/audio_tap.swift -framework ScreenCaptureKit -framework CoreMedia -framework AVFoundation`
+- Requires Xcode Command Line Tools: `xcode-select --install`
 
-**No audio being captured**
-- Make sure your system audio output is set to the Multi-Output Device (not just BlackHole)
-- Check that BlackHole is included in the Multi-Output Device
+**No system audio being captured**
+- Grant **Screen Recording** permission: **System Settings → Privacy & Security → Screen Recording** → enable for Muesli (or Terminal if running from source)
+- You may need to restart the app after granting permission
 
 **Only other people's audio is transcribed, not mine**
-- The app records from both BlackHole (system audio) and your default microphone
+- The app records both system audio and your default microphone
 - Check **System Settings → Privacy & Security → Microphone** and ensure the app (or Terminal) has permission
 
 **Diarization error: "403 Client Error"**

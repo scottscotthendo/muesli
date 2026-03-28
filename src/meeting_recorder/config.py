@@ -13,11 +13,8 @@ TOKEN_PATH = CONFIG_DIR / "token.json"
 CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 
 # Audio
-SAMPLE_RATE = 44100  # BlackHole default
 TARGET_SAMPLE_RATE = 16000  # faster-whisper expects 16kHz
-CHANNELS = 2  # BlackHole 2ch
 CHUNK_DURATION_SECONDS = 30
-BLACKHOLE_DEVICE_PREFIX = "BlackHole"
 
 # Transcription
 WHISPER_MODEL = "small.en"
