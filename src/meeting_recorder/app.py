@@ -25,6 +25,7 @@ from meeting_recorder.error_manager import ErrorManager
 from meeting_recorder.recorder import AudioRecorder
 from meeting_recorder.summarizer import Summarizer
 from meeting_recorder.transcriber import Transcriber
+from meeting_recorder.notion_client import push_to_notion
 from meeting_recorder.transcript_writer import TranscriptWriter
 
 logging.basicConfig(
@@ -419,6 +420,7 @@ class MeetingRecorderApp(rumps.App):
 
         # Step 3: Summarization
         self.status_item.title = "Summarizing..."
+        summary = None
         summarizer = Summarizer()
         try:
             summarizer.load_model()
@@ -439,7 +441,20 @@ class MeetingRecorderApp(rumps.App):
             del summarizer
             _free_memory()
 
-        # Step 4: Reload whisper for the next recording
+        # Step 4: Push to Notion
+        self.status_item.title = "Syncing to Notion..."
+        try:
+            push_to_notion(
+                title=writer.title,
+                start_time=writer.start_time,
+                attendees=writer.attendees,
+                summary=summary,
+                transcript_path=file_path,
+            )
+        except Exception:
+            logger.exception("Notion sync failed")
+
+        # Step 5: Reload whisper for the next recording
         logger.info("Reloading whisper model for next recording...")
         self.status_item.title = "Reloading transcription model..."
         self._load_whisper()

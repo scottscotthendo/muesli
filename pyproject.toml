@@ -18,6 +18,7 @@ dependencies = [
     "google-auth-httplib2>=0.1.1",
     "llama-cpp-python>=0.2.0",
     "huggingface-hub>=0.20.0",
+    "notion-client>=2.0.0",
 ]
 
 [project.optional-dependencies]
