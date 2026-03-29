@@ -475,6 +475,8 @@ class MeetingRecorderApp(rumps.App):
 
 
 def main():
+    import multiprocessing
+    multiprocessing.freeze_support()
     MeetingRecorderApp().run()
 
 
