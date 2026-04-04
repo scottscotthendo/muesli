@@ -4,9 +4,11 @@ import logging
 import os
 import queue
 import signal
+import struct
 import subprocess
 import threading
 import time
+import wave
 
 import numpy as np
 import sounddevice as sd
@@ -14,6 +16,8 @@ from scipy.signal import resample
 
 from meeting_recorder.config import (
     CHUNK_DURATION_SECONDS,
+    RECOVERY_DIR,
+    SILENCE_WARNING_SECONDS,
     TARGET_SAMPLE_RATE,
 )
 
@@ -56,6 +60,18 @@ class AudioRecorder:
         self._mic_lock = threading.Lock()
         self._all_chunks_16k: list[np.ndarray] = []
 
+        # Recovery: incremental WAV file written to disk as chunks arrive
+        self._recovery_wav: wave.Wave_write | None = None
+        self._recovery_path: str | None = None
+
+        # Audio level monitoring
+        self._current_rms: float = 0.0
+        self._current_peak: float = 0.0
+        self._silence_start: float | None = None
+        self._silence_warning_fired = False
+        self._on_silence_warning: callable | None = None
+        self._on_audio_tap_error: callable | None = None
+
     def _start_system_audio(self):
         """Launch the ScreenCaptureKit audio_tap subprocess."""
         if not os.path.isfile(AUDIO_TAP_PATH):
@@ -80,6 +96,79 @@ class AudioRecorder:
                 logger.info("[audio_tap] %s", line.decode().strip())
 
         threading.Thread(target=_log_stderr, name="AudioTapStderr", daemon=True).start()
+
+    def _open_recovery_wav(self):
+        """Open a recovery WAV file for incremental writing."""
+        RECOVERY_DIR.mkdir(parents=True, exist_ok=True)
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        self._recovery_path = str(RECOVERY_DIR / f"recovery_{timestamp}.wav")
+        self._recovery_wav = wave.open(self._recovery_path, "wb")
+        self._recovery_wav.setnchannels(1)
+        self._recovery_wav.setsampwidth(2)  # 16-bit PCM
+        self._recovery_wav.setframerate(TARGET_SAMPLE_RATE)
+        logger.info("Recovery WAV opened: %s", self._recovery_path)
+
+    def _write_recovery_chunk(self, audio_16k: np.ndarray):
+        """Append a chunk of 16kHz float32 audio to the recovery WAV."""
+        if self._recovery_wav is None:
+            return
+        # Convert float32 [-1, 1] to int16
+        pcm = np.clip(audio_16k, -1.0, 1.0)
+        pcm = (pcm * 32767).astype(np.int16)
+        self._recovery_wav.writeframes(pcm.tobytes())
+
+    def _close_recovery_wav(self):
+        """Close the recovery WAV file."""
+        if self._recovery_wav is not None:
+            try:
+                self._recovery_wav.close()
+            except Exception:
+                logger.exception("Error closing recovery WAV")
+            self._recovery_wav = None
+
+    def get_recovery_path(self) -> str | None:
+        """Return the path to the recovery WAV file, or None if not available."""
+        return self._recovery_path
+
+    def delete_recovery_file(self):
+        """Delete the recovery WAV after a successful recording completes."""
+        if self._recovery_path and os.path.isfile(self._recovery_path):
+            try:
+                os.remove(self._recovery_path)
+                logger.info("Recovery file deleted: %s", self._recovery_path)
+            except OSError:
+                logger.warning("Could not delete recovery file: %s", self._recovery_path)
+
+    def _update_audio_levels(self, audio_16k: np.ndarray):
+        """Track RMS and peak levels; detect prolonged silence."""
+        self._current_rms = float(np.sqrt(np.mean(audio_16k ** 2)))
+        self._current_peak = float(np.abs(audio_16k).max())
+
+        # Threshold for "silence" — RMS below -60 dBFS (~0.001)
+        is_silent = self._current_rms < 0.001
+
+        now = time.time()
+        if is_silent:
+            if self._silence_start is None:
+                self._silence_start = now
+            elif (
+                not self._silence_warning_fired
+                and (now - self._silence_start) >= SILENCE_WARNING_SECONDS
+            ):
+                self._silence_warning_fired = True
+                logger.warning(
+                    "Audio has been silent for %d+ seconds — check your audio source.",
+                    SILENCE_WARNING_SECONDS,
+                )
+                if self._on_silence_warning:
+                    self._on_silence_warning()
+        else:
+            self._silence_start = None
+            self._silence_warning_fired = False
+
+    def get_audio_levels(self) -> tuple[float, float]:
+        """Return the current (rms, peak) levels as floats in [0, 1]."""
+        return self._current_rms, self._current_peak
 
     def _stop_system_audio(self):
         """Terminate the audio_tap subprocess."""
@@ -120,6 +209,26 @@ class AudioRecorder:
                 if not self.stop_event.is_set():
                     logger.exception("Error reading system audio")
                 break
+
+        # Detect audio_tap crash: if we didn't request the stop, the process died
+        if not self.stop_event.is_set() and self._sck_process:
+            retcode = self._sck_process.poll()
+            if retcode is not None and retcode != 0:
+                msg = f"audio_tap crashed with exit code {retcode}"
+                logger.error(msg)
+                # Try to capture stderr for diagnostics
+                try:
+                    stderr_out = self._sck_process.stderr.read()
+                    if stderr_out:
+                        msg += f": {stderr_out.decode(errors='replace').strip()}"
+                except Exception:
+                    pass
+                if self._on_audio_tap_error:
+                    self._on_audio_tap_error(msg)
+            elif retcode is None:
+                logger.error("audio_tap stdout closed unexpectedly while process still running")
+                if self._on_audio_tap_error:
+                    self._on_audio_tap_error("System audio capture stopped unexpectedly")
 
     def _find_mic(self) -> dict | None:
         """Find the default microphone device."""
@@ -170,6 +279,12 @@ class AudioRecorder:
         else:
             mixed = system_audio
 
+        # Update audio level monitoring
+        self._update_audio_levels(mixed)
+
+        # Write to recovery WAV (survives crashes)
+        self._write_recovery_chunk(mixed)
+
         self._all_chunks_16k.append(mixed)
         timestamp_seconds = self._chunk_index * CHUNK_DURATION_SECONDS
         self.audio_queue.put((timestamp_seconds, mixed))
@@ -178,6 +293,9 @@ class AudioRecorder:
 
     def run(self):
         """Start recording. Blocks until stop_event is set."""
+        # Open recovery WAV for crash-safe incremental saving
+        self._open_recovery_wav()
+
         # Start system audio capture via ScreenCaptureKit
         self._start_system_audio()
 
@@ -212,6 +330,9 @@ class AudioRecorder:
         with self._buffer_lock:
             if self._buffer:
                 self._flush_chunk()
+
+        # Close recovery WAV (it remains on disk until explicitly deleted)
+        self._close_recovery_wav()
 
         logger.info("Recording stopped.")
 

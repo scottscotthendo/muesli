@@ -28,6 +28,10 @@ CALENDAR_CHECK_INTERVAL_SECONDS = 60
 # Diarization
 DIARIZATION_ENABLED = True  # Set to False to skip speaker identification
 
+# Recovery
+RECOVERY_DIR = CONFIG_DIR / "recovery"
+SILENCE_WARNING_SECONDS = 30  # warn if audio is near-silent for this long
+
 # Notion
 NOTION_TOKEN_PATH = CONFIG_DIR / "notion_token"
 NOTION_DATABASE_ID = "e295f2aa27af4d54a371e6db4e9f8613"

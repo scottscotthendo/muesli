@@ -18,6 +18,7 @@ from meeting_recorder.config import (
     ICON_ERROR,
     ICON_IDLE,
     ICON_RECORDING,
+    RECOVERY_DIR,
     TARGET_SAMPLE_RATE,
 )
 from meeting_recorder.diarizer import Diarizer, assign_speakers_to_transcript
@@ -42,6 +43,7 @@ ERR_RECORDING = "Recording"
 ERR_SUMMARIZATION = "Summarization"
 ERR_DIARIZATION = "Diarization"
 ERR_CALENDAR = "Calendar"
+ERR_AUDIO_TAP = "System Audio"
 
 
 def _free_memory():
@@ -61,6 +63,8 @@ class MeetingRecorderApp(rumps.App):
         self.start_stop_button = rumps.MenuItem("Start Recording", callback=self.on_start_stop)
         self.status_item = rumps.MenuItem("Idle")
         self.status_item.set_callback(None)
+        self.level_item = rumps.MenuItem("Level: --")
+        self.level_item.set_callback(None)
         self._error_separator = rumps.separator
         self._error_menu_items: list[rumps.MenuItem] = []
         self._quit_item = rumps.MenuItem("Quit", callback=self.on_quit)
@@ -68,6 +72,7 @@ class MeetingRecorderApp(rumps.App):
         self.menu = [
             self.start_stop_button,
             self.status_item,
+            self.level_item,
             self._error_separator,
             self._quit_item,
         ]
@@ -96,10 +101,49 @@ class MeetingRecorderApp(rumps.App):
         self._transcriber_preload = Transcriber(queue.Queue(), queue.Queue(), threading.Event())
         self._load_whisper()
 
+        # Check for recovery files from a previous crash
+        self._check_recovery_files()
+
         # Timers
         self._ui_timer = rumps.Timer(self._on_ui_tick, 1)
         self._calendar_timer = rumps.Timer(self._on_calendar_tick, CALENDAR_CHECK_INTERVAL_SECONDS)
         self._calendar_timer.start()
+
+    # ── Crash recovery ─────────────────────────────────────────────
+
+    def _check_recovery_files(self):
+        """Check for recovery WAV files from a previous crash and notify user."""
+        if not RECOVERY_DIR.exists():
+            return
+        wav_files = sorted(RECOVERY_DIR.glob("recovery_*.wav"))
+        if not wav_files:
+            return
+
+        count = len(wav_files)
+        total_mb = sum(f.stat().st_size for f in wav_files) / (1024 * 1024)
+        logger.info(
+            "Found %d recovery file(s) (%.1f MB) from a previous session.",
+            count,
+            total_mb,
+        )
+        response = rumps.alert(
+            title="Recovered Audio Found",
+            message=(
+                f"Found {count} audio file(s) ({total_mb:.1f} MB) from a previous "
+                f"session that may not have saved properly.\n\n"
+                f"Location: {RECOVERY_DIR}\n\n"
+                "Keep them for manual recovery, or delete them?"
+            ),
+            ok="Keep",
+            cancel="Delete",
+        )
+        if response == 0:  # Cancel = Delete
+            for f in wav_files:
+                try:
+                    f.unlink()
+                except OSError:
+                    logger.warning("Could not delete %s", f)
+            logger.info("Recovery files deleted.")
 
     # ── Model loading with error handling ──────────────────────────
 
@@ -191,6 +235,14 @@ class MeetingRecorderApp(rumps.App):
         seconds = int(elapsed) % 60
         self.title = f"{ICON_RECORDING} {minutes:02d}:{seconds:02d}"
 
+        # Update audio level indicator
+        if self._recorder:
+            rms, peak = self._recorder.get_audio_levels()
+            # Show a simple bar: 0-5 blocks based on RMS
+            bar_count = min(int(rms * 50), 5)
+            bar = "\u2588" * bar_count + "\u2591" * (5 - bar_count)
+            self.level_item.title = f"Level: [{bar}]"
+
         # Poll transcription results
         if self._results_queue and self._writer:
             while True:
@@ -251,6 +303,29 @@ class MeetingRecorderApp(rumps.App):
         if response == 1:  # OK clicked
             self._start_recording(event)
 
+    # ── Audio reliability callbacks ──────────────────────────────
+
+    def _on_silence_warning(self):
+        """Called by the recorder when audio has been silent too long."""
+        self._errors.report(
+            "Silence",
+            "No audio detected — check your audio source.",
+        )
+        rumps.notification(
+            APP_NAME,
+            "No Audio Detected",
+            "Recording is running but no audio is being captured. Check your audio source.",
+        )
+
+    def _on_audio_tap_error(self, message: str):
+        """Called by the recorder when the audio_tap subprocess crashes."""
+        self._errors.report(ERR_AUDIO_TAP, message)
+        rumps.notification(
+            APP_NAME,
+            "System Audio Capture Failed",
+            message,
+        )
+
     # ── Recording ──────────────────────────────────────────────────
 
     def on_start_stop(self, _sender):
@@ -294,8 +369,10 @@ class MeetingRecorderApp(rumps.App):
         self._transcriber._model_ready = self._transcriber_preload._model_ready
         self._transcriber._loading_error = self._transcriber_preload._loading_error
 
-        # Set up recorder
+        # Set up recorder with error/silence callbacks
         self._recorder = AudioRecorder(self._audio_queue, self._stop_event)
+        self._recorder._on_silence_warning = self._on_silence_warning
+        self._recorder._on_audio_tap_error = self._on_audio_tap_error
 
         # Start threads
         try:
@@ -358,7 +435,10 @@ class MeetingRecorderApp(rumps.App):
 
         # Update UI
         self.start_stop_button.title = "Start Recording"
+        self.level_item.title = "Level: --"
         self.title = ICON_IDLE
+        self._errors.clear("Silence")
+        self._errors.clear(ERR_AUDIO_TAP)
 
         if file_path:
             self.status_item.title = "Processing..."
@@ -366,9 +446,13 @@ class MeetingRecorderApp(rumps.App):
 
             # Run post-processing in background with sequential model lifecycle
             transcript_segments = list(self._transcript_segments)
+            recorder = self._recorder
 
             def _post_process():
                 self._run_post_processing(writer, file_path, full_audio, transcript_segments)
+                # Recording completed successfully — delete recovery file
+                if recorder:
+                    recorder.delete_recovery_file()
 
             threading.Thread(target=_post_process, name="PostProcess", daemon=True).start()
         else:
