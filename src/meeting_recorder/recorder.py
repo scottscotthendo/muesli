@@ -139,13 +139,12 @@ class AudioRecorder:
             except OSError:
                 logger.warning("Could not delete recovery file: %s", self._recovery_path)
 
-    def _update_audio_levels(self, audio_16k: np.ndarray):
-        """Track RMS and peak levels; detect prolonged silence."""
-        self._current_rms = float(np.sqrt(np.mean(audio_16k ** 2)))
-        self._current_peak = float(np.abs(audio_16k).max())
+    def _check_silence(self, audio_16k: np.ndarray):
+        """Detect prolonged silence over a full chunk."""
+        chunk_rms = float(np.sqrt(np.mean(audio_16k ** 2)))
 
         # Threshold for "silence" — RMS below -60 dBFS (~0.001)
-        is_silent = self._current_rms < 0.001
+        is_silent = chunk_rms < 0.001
 
         now = time.time()
         if is_silent:
@@ -198,6 +197,10 @@ class AudioRecorder:
                     audio = audio.reshape(-1, 2)
 
                 chunk_16k = _resample_to_16k(audio, SCK_SAMPLE_RATE)
+
+                # Update levels on every block for responsive UI metering
+                self._current_rms = float(np.sqrt(np.mean(chunk_16k ** 2)))
+                self._current_peak = float(np.abs(chunk_16k).max())
 
                 with self._buffer_lock:
                     self._buffer.append(chunk_16k)
@@ -279,8 +282,8 @@ class AudioRecorder:
         else:
             mixed = system_audio
 
-        # Update audio level monitoring
-        self._update_audio_levels(mixed)
+        # Check for prolonged silence over the full mixed chunk
+        self._check_silence(mixed)
 
         # Write to recovery WAV (survives crashes)
         self._write_recovery_chunk(mixed)
