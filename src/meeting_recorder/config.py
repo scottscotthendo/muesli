@@ -36,6 +36,13 @@ SILENCE_WARNING_SECONDS = 30  # warn if audio is near-silent for this long
 NOTION_TOKEN_PATH = CONFIG_DIR / "notion_token"
 NOTION_DATABASE_ID = "e295f2aa27af4d54a371e6db4e9f8613"
 
+# Recording safety guards
+MAX_RECORDING_HOURS = 12  # hard time cap
+NUDGE_SCHEDULE_MINUTES = [5, 15, 30]  # escalating nudge intervals, then every 30m
+SILENCE_AUTO_STOP_SECONDS = 300  # auto-stop after 5 min of silence (with grace period)
+SILENCE_GRACE_SECONDS = 60  # grace period before silence auto-stop takes effect
+MIN_DISK_SPACE_MB = 500  # auto-stop if disk space drops below this
+
 # UI
 APP_NAME = "Muesli"
 ICON_IDLE = "🎙"
