@@ -1,4 +1,4 @@
-"""py2app setup for Meeting Recorder."""
+"""py2app setup for Muesli."""
 
 from setuptools import setup
 
@@ -9,13 +9,13 @@ OPTIONS = {
     "emulate_shell_environment": True,
     "plist": {
         "LSUIElement": True,  # No dock icon
-        "CFBundleName": "Hendos Meeting Recorder",
-        "CFBundleDisplayName": "Hendos Meeting Recorder",
-        "CFBundleIdentifier": "com.personal.meeting-recorder",
+        "CFBundleName": "Muesli",
+        "CFBundleDisplayName": "Muesli",
+        "CFBundleIdentifier": "com.personal.muesli",
         "CFBundleVersion": "0.1.0",
         "CFBundleShortVersionString": "0.1.0",
         "NSMicrophoneUsageDescription": (
-            "Meeting Recorder needs microphone access to capture audio "
+            "Muesli needs microphone access to capture audio "
             "from the BlackHole virtual audio device."
         ),
     },

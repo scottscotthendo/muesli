@@ -1,1 +1,1 @@
-"""Meeting Recorder — macOS menubar app for recording and transcribing meetings."""
+"""Muesli — macOS menubar app for recording and transcribing meetings."""

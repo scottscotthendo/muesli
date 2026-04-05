@@ -18,6 +18,12 @@ from meeting_recorder.config import (
     ICON_ERROR,
     ICON_IDLE,
     ICON_RECORDING,
+    MAX_RECORDING_HOURS,
+    MIN_DISK_SPACE_MB,
+    NUDGE_SCHEDULE_MINUTES,
+    RECOVERY_DIR,
+    SILENCE_AUTO_STOP_SECONDS,
+    SILENCE_GRACE_SECONDS,
     TARGET_SAMPLE_RATE,
 )
 from meeting_recorder.diarizer import Diarizer, assign_speakers_to_transcript
@@ -25,6 +31,7 @@ from meeting_recorder.error_manager import ErrorManager
 from meeting_recorder.recorder import AudioRecorder
 from meeting_recorder.summarizer import Summarizer
 from meeting_recorder.transcriber import Transcriber
+from meeting_recorder.notion_client import push_to_notion
 from meeting_recorder.transcript_writer import TranscriptWriter
 
 logging.basicConfig(
@@ -41,6 +48,7 @@ ERR_RECORDING = "Recording"
 ERR_SUMMARIZATION = "Summarization"
 ERR_DIARIZATION = "Diarization"
 ERR_CALENDAR = "Calendar"
+ERR_AUDIO_TAP = "System Audio"
 
 
 def _free_memory():
@@ -60,6 +68,8 @@ class MeetingRecorderApp(rumps.App):
         self.start_stop_button = rumps.MenuItem("Start Recording", callback=self.on_start_stop)
         self.status_item = rumps.MenuItem("Idle")
         self.status_item.set_callback(None)
+        self.level_item = rumps.MenuItem("Level: --")
+        self.level_item.set_callback(None)
         self._error_separator = rumps.separator
         self._error_menu_items: list[rumps.MenuItem] = []
         self.quit_button = rumps.MenuItem("Quit", callback=self.on_quit)
@@ -67,6 +77,7 @@ class MeetingRecorderApp(rumps.App):
         self.menu = [
             self.start_stop_button,
             self.status_item,
+            self.level_item,
             self._error_separator,
             self.quit_button,
         ]
@@ -85,6 +96,11 @@ class MeetingRecorderApp(rumps.App):
         # Transcript segments collected during recording for diarization
         self._transcript_segments: list[tuple[int, str]] = []
 
+        # Safety guard state
+        self._next_nudge_index: int = 0
+        self._last_nudge_time: float = 0.0
+        self._disk_check_counter: int = 0
+
         # Calendar
         self._calendar = CalendarClient()
         self._pending_event: CalendarEvent | None = None
@@ -95,10 +111,49 @@ class MeetingRecorderApp(rumps.App):
         self._transcriber_preload = Transcriber(queue.Queue(), queue.Queue(), threading.Event())
         self._load_whisper()
 
+        # Check for recovery files from a previous crash
+        self._check_recovery_files()
+
         # Timers
         self._ui_timer = rumps.Timer(self._on_ui_tick, 1)
         self._calendar_timer = rumps.Timer(self._on_calendar_tick, CALENDAR_CHECK_INTERVAL_SECONDS)
         self._calendar_timer.start()
+
+    # ── Crash recovery ─────────────────────────────────────────────
+
+    def _check_recovery_files(self):
+        """Check for recovery WAV files from a previous crash and notify user."""
+        if not RECOVERY_DIR.exists():
+            return
+        wav_files = sorted(RECOVERY_DIR.glob("recovery_*.wav"))
+        if not wav_files:
+            return
+
+        count = len(wav_files)
+        total_mb = sum(f.stat().st_size for f in wav_files) / (1024 * 1024)
+        logger.info(
+            "Found %d recovery file(s) (%.1f MB) from a previous session.",
+            count,
+            total_mb,
+        )
+        response = rumps.alert(
+            title="Recovered Audio Found",
+            message=(
+                f"Found {count} audio file(s) ({total_mb:.1f} MB) from a previous "
+                f"session that may not have saved properly.\n\n"
+                f"Location: {RECOVERY_DIR}\n\n"
+                "Keep them for manual recovery, or delete them?"
+            ),
+            ok="Keep",
+            cancel="Delete",
+        )
+        if response == 0:  # Cancel = Delete
+            for f in wav_files:
+                try:
+                    f.unlink()
+                except OSError:
+                    logger.warning("Could not delete %s", f)
+            logger.info("Recovery files deleted.")
 
     # ── Model loading with error handling ──────────────────────────
 
@@ -190,6 +245,14 @@ class MeetingRecorderApp(rumps.App):
         seconds = int(elapsed) % 60
         self.title = f"{ICON_RECORDING} {minutes:02d}:{seconds:02d}"
 
+        # Update audio level indicator
+        if self._recorder:
+            rms, peak = self._recorder.get_audio_levels()
+            # Show a simple bar: 0-5 blocks based on RMS
+            bar_count = min(int(rms * 50), 5)
+            bar = "\u2588" * bar_count + "\u2591" * (5 - bar_count)
+            self.level_item.title = f"Level: [{bar}]"
+
         # Poll transcription results
         if self._results_queue and self._writer:
             while True:
@@ -199,6 +262,87 @@ class MeetingRecorderApp(rumps.App):
                     self._transcript_segments.append((ts, text))
                 except queue.Empty:
                     break
+
+        # Run safety guards
+        self._check_safety_guards(elapsed)
+
+    # ── Safety guards ──────────────────────────────────────────────
+
+    def _check_safety_guards(self, elapsed_seconds: float):
+        """Run all safety checks: hard cap, silence auto-stop, disk space, nudges."""
+        elapsed_hours = elapsed_seconds / 3600
+        elapsed_minutes = elapsed_seconds / 60
+
+        # Tier 4: Hard time cap
+        if elapsed_hours >= MAX_RECORDING_HOURS:
+            logger.warning("Hard time cap reached (%d hours). Auto-stopping.", MAX_RECORDING_HOURS)
+            rumps.notification(
+                APP_NAME,
+                "Recording Auto-Stopped",
+                f"Maximum recording duration ({MAX_RECORDING_HOURS}h) reached.",
+            )
+            self._stop_recording()
+            return
+
+        # Warn at 90% of hard cap
+        cap_warn_hours = MAX_RECORDING_HOURS * 0.9
+        if elapsed_hours >= cap_warn_hours and elapsed_hours < cap_warn_hours + (1 / 3600):
+            rumps.notification(
+                APP_NAME,
+                "Recording Time Warning",
+                f"Recording will auto-stop in {int((MAX_RECORDING_HOURS - elapsed_hours) * 60)} minutes.",
+            )
+
+        # Tier 3: Silence auto-stop (with grace period)
+        if self._recorder:
+            silence_duration = self._recorder.get_silence_duration()
+            if silence_duration >= SILENCE_AUTO_STOP_SECONDS + SILENCE_GRACE_SECONDS:
+                logger.warning(
+                    "Prolonged silence (%ds). Auto-stopping recording.",
+                    int(silence_duration),
+                )
+                rumps.notification(
+                    APP_NAME,
+                    "Recording Auto-Stopped",
+                    f"No audio detected for {int(silence_duration // 60)} minutes.",
+                )
+                self._stop_recording()
+                return
+
+        # Tier 2: Disk space check (every 10 seconds to avoid I/O spam)
+        self._disk_check_counter += 1
+        if self._disk_check_counter >= 10:
+            self._disk_check_counter = 0
+            if self._recorder and not self._recorder.check_disk_space():
+                logger.warning("Low disk space. Auto-stopping recording.")
+                rumps.notification(
+                    APP_NAME,
+                    "Recording Auto-Stopped",
+                    f"Disk space dropped below {MIN_DISK_SPACE_MB} MB.",
+                )
+                self._stop_recording()
+                return
+
+        # Tier 1: Escalating nudges
+        self._check_nudge(elapsed_minutes)
+
+    def _check_nudge(self, elapsed_minutes: float):
+        """Send escalating reminder notifications that recording is still active."""
+        if self._next_nudge_index < len(NUDGE_SCHEDULE_MINUTES):
+            threshold = NUDGE_SCHEDULE_MINUTES[self._next_nudge_index]
+        else:
+            # After the schedule is exhausted, nudge every 30 minutes
+            last = NUDGE_SCHEDULE_MINUTES[-1] if NUDGE_SCHEDULE_MINUTES else 30
+            intervals_past = self._next_nudge_index - len(NUDGE_SCHEDULE_MINUTES) + 1
+            threshold = last + (intervals_past * 30)
+
+        if elapsed_minutes >= threshold:
+            rumps.notification(
+                APP_NAME,
+                "Still Recording",
+                f"Recording has been running for {int(elapsed_minutes)} minutes.",
+            )
+            self._next_nudge_index += 1
 
     # ── Calendar ───────────────────────────────────────────────────
 
@@ -250,6 +394,46 @@ class MeetingRecorderApp(rumps.App):
         if response == 1:  # OK clicked
             self._start_recording(event)
 
+    # ── Audio reliability callbacks ──────────────────────────────
+
+    def _on_silence_warning(self):
+        """Called by the recorder when audio has been silent too long."""
+        self._errors.report(
+            "Silence",
+            "No audio detected — check your audio source.",
+        )
+        rumps.notification(
+            APP_NAME,
+            "No Audio Detected",
+            "Recording is running but no audio is being captured. Check your audio source.",
+        )
+
+    def _on_audio_tap_error(self, message: str):
+        """Called by the recorder when the audio_tap subprocess crashes."""
+        self._errors.report(ERR_AUDIO_TAP, message)
+        rumps.notification(
+            APP_NAME,
+            "System Audio Capture Failed",
+            message,
+        )
+
+    def _on_low_disk_space(self, free_mb: float):
+        """Called by the recorder when disk space is critically low."""
+        rumps.notification(
+            APP_NAME,
+            "Low Disk Space",
+            f"Only {free_mb:.0f} MB remaining. Recording will stop to prevent data loss.",
+        )
+
+    def _on_mic_reconnect(self, device_name: str):
+        """Called by the recorder when the mic successfully reconnects."""
+        self._errors.clear("Microphone")
+        rumps.notification(
+            APP_NAME,
+            "Microphone Reconnected",
+            f"Now using: {device_name}",
+        )
+
     # ── Recording ──────────────────────────────────────────────────
 
     def on_start_stop(self, _sender):
@@ -267,6 +451,11 @@ class MeetingRecorderApp(rumps.App):
         self._recording = True
         self._start_time = datetime.now()
         self._transcript_segments = []
+
+        # Reset safety guard state
+        self._next_nudge_index = 0
+        self._last_nudge_time = 0.0
+        self._disk_check_counter = 0
 
         # Set up queues and stop event
         self._stop_event = threading.Event()
@@ -293,8 +482,12 @@ class MeetingRecorderApp(rumps.App):
         self._transcriber._model_ready = self._transcriber_preload._model_ready
         self._transcriber._loading_error = self._transcriber_preload._loading_error
 
-        # Set up recorder
+        # Set up recorder with error/silence callbacks
         self._recorder = AudioRecorder(self._audio_queue, self._stop_event)
+        self._recorder._on_silence_warning = self._on_silence_warning
+        self._recorder._on_audio_tap_error = self._on_audio_tap_error
+        self._recorder._on_low_disk_space = self._on_low_disk_space
+        self._recorder._on_mic_reconnect = self._on_mic_reconnect
 
         # Start threads
         try:
@@ -357,7 +550,10 @@ class MeetingRecorderApp(rumps.App):
 
         # Update UI
         self.start_stop_button.title = "Start Recording"
+        self.level_item.title = "Level: --"
         self.title = ICON_IDLE
+        self._errors.clear("Silence")
+        self._errors.clear(ERR_AUDIO_TAP)
 
         if file_path:
             self.status_item.title = "Processing..."
@@ -365,9 +561,13 @@ class MeetingRecorderApp(rumps.App):
 
             # Run post-processing in background with sequential model lifecycle
             transcript_segments = list(self._transcript_segments)
+            recorder = self._recorder
 
             def _post_process():
                 self._run_post_processing(writer, file_path, full_audio, transcript_segments)
+                # Recording completed successfully — delete recovery file
+                if recorder:
+                    recorder.delete_recovery_file()
 
             threading.Thread(target=_post_process, name="PostProcess", daemon=True).start()
         else:
@@ -378,8 +578,8 @@ class MeetingRecorderApp(rumps.App):
 
         Model lifecycle:
         1. Unload whisper (no longer needed)
-        2. Load diarizer → run → unload diarizer
-        3. Load summarizer → run → unload summarizer
+        2. Load diarizer -> run -> unload diarizer
+        3. Load summarizer -> run -> unload summarizer
         4. Reload whisper (ready for next recording)
         """
         # Step 1: Unload whisper to free ~460MB
@@ -419,6 +619,7 @@ class MeetingRecorderApp(rumps.App):
 
         # Step 3: Summarization
         self.status_item.title = "Summarizing..."
+        summary = None
         summarizer = Summarizer()
         try:
             summarizer.load_model()
@@ -439,7 +640,20 @@ class MeetingRecorderApp(rumps.App):
             del summarizer
             _free_memory()
 
-        # Step 4: Reload whisper for the next recording
+        # Step 4: Push to Notion
+        self.status_item.title = "Syncing to Notion..."
+        try:
+            push_to_notion(
+                title=writer.title,
+                start_time=writer.start_time,
+                attendees=writer.attendees,
+                summary=summary,
+                transcript_path=file_path,
+            )
+        except Exception:
+            logger.exception("Notion sync failed")
+
+        # Step 5: Reload whisper for the next recording
         logger.info("Reloading whisper model for next recording...")
         self.status_item.title = "Reloading transcription model..."
         self._load_whisper()
@@ -460,6 +674,8 @@ class MeetingRecorderApp(rumps.App):
 
 
 def main():
+    import multiprocessing
+    multiprocessing.freeze_support()
     MeetingRecorderApp().run()
 
 

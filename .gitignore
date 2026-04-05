@@ -12,3 +12,7 @@ venv/
 .env
 token.json
 credentials.json
+# Compiled Swift binary (built locally)
+src/meeting_recorder/audio_tap
+.DS_Store
+*.spec

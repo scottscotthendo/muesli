@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build Meeting Recorder as a macOS .app bundle using py2app.
+# Build Muesli as a macOS .app bundle using py2app.
 #
 # Usage:
 #   ./scripts/build_app.sh

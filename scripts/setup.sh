@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Full setup for Meeting Recorder on a fresh Mac.
+# Full setup for Muesli on a fresh Mac.
 #
 # What it does:
 #   1. Installs Homebrew (if missing)
@@ -54,14 +54,18 @@ fi
 echo "    Using: $PYTHON"
 
 # -------------------------------------------------------------------
-# 3. BlackHole virtual audio driver
+# 3. Build ScreenCaptureKit audio helper
 # -------------------------------------------------------------------
-step "Checking BlackHole 2ch..."
-if brew list blackhole-2ch &>/dev/null; then
-    echo "    BlackHole 2ch already installed."
+step "Building audio capture helper..."
+AUDIO_TAP_SRC="src/meeting_recorder/audio_tap.swift"
+AUDIO_TAP_BIN="src/meeting_recorder/audio_tap"
+if [ -f "$AUDIO_TAP_BIN" ] && [ "$AUDIO_TAP_BIN" -nt "$AUDIO_TAP_SRC" ]; then
+    echo "    audio_tap binary is up to date."
 else
-    echo "    Installing BlackHole 2ch..."
-    brew install blackhole-2ch
+    echo "    Compiling audio_tap..."
+    swiftc -O -o "$AUDIO_TAP_BIN" "$AUDIO_TAP_SRC" \
+        -framework ScreenCaptureKit -framework CoreMedia -framework AVFoundation
+    echo "    audio_tap compiled successfully."
 fi
 
 # -------------------------------------------------------------------
@@ -103,44 +107,72 @@ print('    Summarization model ready.')
 # -------------------------------------------------------------------
 # 6. Build .app and install
 # -------------------------------------------------------------------
-step "Building Hendos Meeting Recorder.app..."
+step "Building Muesli.app..."
 ./scripts/build_app.sh
 
 step "Installing to /Applications..."
-if [ -d "/Applications/Hendos Meeting Recorder.app" ]; then
+if [ -d "/Applications/Muesli.app" ]; then
     echo "    Removing previous version..."
-    rm -rf "/Applications/Hendos Meeting Recorder.app"
+    rm -rf "/Applications/Muesli.app"
 fi
-cp -R dist/app.app "/Applications/Hendos Meeting Recorder.app"
-echo "    Installed: /Applications/Hendos Meeting Recorder.app"
+cp -R dist/app.app "/Applications/Muesli.app"
+echo "    Installed: /Applications/Muesli.app"
 
 # -------------------------------------------------------------------
 # 7. Add to Login Items (auto-launch on boot)
 # -------------------------------------------------------------------
 step "Adding to Login Items (auto-launch on boot)..."
-osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/Hendos Meeting Recorder.app", hidden:true}' 2>/dev/null && \
-    echo "    Meeting Recorder will launch automatically on login." || \
+osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/Muesli.app", hidden:true}' 2>/dev/null && \
+    echo "    Muesli will launch automatically on login." || \
     warn "Could not add to Login Items — you can do this manually in System Settings → General → Login Items."
 
 # -------------------------------------------------------------------
 # 8. Manual steps
 # -------------------------------------------------------------------
-step "Almost done! A couple of manual steps:"
+step "Speaker diarization (optional)..."
+echo ""
+echo "    Diarization identifies who said what in the transcript."
+echo "    It requires ~2GB of additional downloads (torch + pyannote.audio)."
+echo ""
+read -p "    Install diarization support? [y/N] " -n 1 -r
+echo ""
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo "    Installing torch and pyannote.audio..."
+    pip install "pyannote.audio>=3.1" "torch>=2.0" --quiet
+    echo ""
+    echo "    To complete diarization setup, you need to:"
+    echo "    1. Create a Hugging Face token at https://huggingface.co/settings/tokens"
+    echo "    2. Accept model terms at:"
+    echo "       - https://huggingface.co/pyannote/speaker-diarization-3.1"
+    echo "       - https://huggingface.co/pyannote/segmentation-3.0"
+    echo "    3. Log in:"
+    echo '       source .venv/bin/activate && python -c "from huggingface_hub import login; login()"'
+    echo ""
+fi
+
+# -------------------------------------------------------------------
+# 9. Manual steps
+# -------------------------------------------------------------------
+step "Almost done! Optional setup:"
 
 echo ""
-echo -e "  ${BOLD}1. Set up audio routing (required):${RESET}"
-echo "     - Open Audio MIDI Setup (Spotlight → 'Audio MIDI Setup')"
-echo "     - Click + → Create Multi-Output Device"
-echo "     - Check both your speakers/headphones AND BlackHole 2ch"
-echo "     - In System Settings → Sound → Output, select the Multi-Output Device"
+echo -e "  ${BOLD}1. Screen Recording permission (required on first run):${RESET}"
+echo "     - macOS will prompt you to grant Screen Recording access"
+echo "     - This is needed for ScreenCaptureKit to capture system audio"
+echo "     - Go to System Settings → Privacy & Security → Screen Recording if needed"
 echo ""
 echo -e "  ${BOLD}2. Google Calendar integration (optional):${RESET}"
 echo "     - Create OAuth credentials at https://console.cloud.google.com"
 echo "     - Enable the Google Calendar API"
-echo "     - Download credentials.json to ~/.config/meeting-recorder/"
+echo "     - Download credentials.json to ~/.config/muesli/"
 echo "     - The app will prompt you to authorize on first calendar check"
+echo ""
+echo -e "  ${BOLD}3. Notion sync (optional):${RESET}"
+echo "     - Create a Notion integration at https://www.notion.so/profile/integrations"
+echo "     - Save token: echo 'ntn_YOUR_TOKEN' > ~/.config/muesli/notion_token"
+echo "     - Share your Notion database with the integration"
 echo ""
 
 step "Done! Launch with:"
-echo "    open '/Applications/Hendos Meeting Recorder.app'"
+echo "    open '/Applications/Muesli.app'"
 echo ""
